@@ -30,26 +30,27 @@ def singleSensorDemo():
     sensor = opl.openpylivox(True)   #optional True/False, is used to have sensor messages printed to screen (default = False)      
     
     #the sensor object's showMessages properties can be turned on/off throughout program execution (example further down)
-    sensor.showMessages = False
+    #sensor.showMessages = False
     sensor.showMessages = True
     
     #sensor object's showMessages property can always be reset back to what it was initially set as, at the time of instantiation using
-    sensor.resetShowMessages()
+    #sensor.resetShowMessages()
           
     #easiest to try to automatically set the openpylivox sensor connection parameters and connect
-    connected = sensor.auto_connect()
+    #connected = sensor.auto_connect()
     
     #or if your computer has multiple IP address and the correct IP is not being automatically determined
     #you can force the computer IP to a manual address
-#    connected = sensor.auto_connect("192.168.1.20")
+    #connected = sensor.auto_connect("192.168.1.20")
 
     #or manually define all IP addresses and ports (still need to properly configure your IP, Subnet, etc. on your computer)
                              #  computer IP       sensorIP    data port  command port
-#    connected = sensor.connect("192.168.1.20", "192.168.1.42",  60001,     50001)
-    
+    connected = sensor.connect("192.168.1.101", "192.168.1.11",  65000,     55000)
+                                            # Livox Adopticum IP address. Ping 192.168.1.100.
     #make sure a sensor was connected
+    print("Connected: " + str(connected))
     if connected:
-    
+        
         #the sensor's connection parameters can be returned as a list of strings
         connParams = sensor.connectionParameters()
         
@@ -115,7 +116,7 @@ def singleSensorDemo():
         #the sensor's lidar status codes can be returned as a list of integers
         status = sensor.lidarStatusCodes()
         
-        filePathAndName = "points.csv"  #IMPORTANT: watch for OS specific path behaviour
+        filePathAndName = f"livox_points.csv"  #IMPORTANT: watch for OS specific path behaviour
         secsToWait = 0.5                #seconds, time delayed data capture start
         duration = 10.0                 #seconds, zero (0) specifies an indefinite duration
         

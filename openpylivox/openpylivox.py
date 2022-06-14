@@ -36,7 +36,6 @@ import numpy as np     #not heavily used in v1.0 but future version will require
 
 
 class _heartbeatThread(object):
-    
     def __init__(self, interval, transmit_socket, send_to_IP, send_to_port, send_command, showMessages):
         self.interval = interval
         self.IP = send_to_IP
@@ -98,7 +97,7 @@ class _heartbeatThread(object):
 
 class _dataCaptureThread(object):
     
-    def __init__(self, sensorIP, receive_socket, filePathAndName, secsToWait, duration, firmwareType, showMessages):
+    def __init__(self, sensorIP, receive_socket, filePathAndName, secsToWait, duration, firmwareType, showMessages,save_to_csv=False):
         
         self.startTime = -1
         self.sensorIP = sensorIP
@@ -121,7 +120,8 @@ class _dataCaptureThread(object):
         self.firmware_status = -1
         self.pps_status = -1
         self.device_status = -1
-        
+        self.scene = None
+        self.save_to_csv = save_to_csv
         if duration == 0:
             self.duration = 126230400   #4 years of time (so technically not indefinite)
         
@@ -198,7 +198,7 @@ class _dataCaptureThread(object):
                         self.duration += (0.0005 * (self.duration / 2.0))
                     elif self.firmwareType == 3:
                         self.duration += (0.00055 * (self.duration / 2.0))
-                
+                print(f"Intervall: {self.duration} s recording time")
                 timestamp_sec = self.startTime
                 #main loop that captures the desired point cloud data 
                 while True:
@@ -464,6 +464,8 @@ class _dataCaptureThread(object):
                         else:
                             self.started = False
                             self.isCapturing = False
+                            #obj.x = coord1s
+                            #obj.y = coord2s
                             break
                     #thread still running check (exit point)
                     else:
@@ -471,10 +473,11 @@ class _dataCaptureThread(object):
                 
                 #make sure some data was captured
                 lenData = len(coord1s)
-                if lenData > 0:
                 
-                    if self.showMessages: print("   " + self.sensorIP + " --> writing data to file: " + self.filePathAndName)
-                    csvFile = open(self.filePathAndName,"w")
+                if lenData > 0:
+                    if self.save_to_csv:
+                        if self.showMessages: print("   " + self.sensorIP + " --> writing data to file: " + self.filePathAndName)
+                        csvFile = open(self.filePathAndName,"w")
                     
                     numPts = 0
                     nullPts = 0
@@ -488,21 +491,26 @@ class _dataCaptureThread(object):
                         
                         #Cartesian
                         if self.dataType == 0:
-                            csvFile.write("//X,Y,Z,Inten-sity,Time\n")
+                            #csvFile.write("//X,Y,Z,Inten-sity,Time\n")
+                            coords = []
                             for i in range(0,lenData):
                                 coord1 = round(float(struct.unpack('<i',coord1s[i])[0])/1000.0,3)
                                 coord2 = round(float(struct.unpack('<i',coord2s[i])[0])/1000.0,3)
                                 coord3 = round(float(struct.unpack('<i',coord3s[i])[0])/1000.0,3)
+                                
                                 if coord1 or coord2 or coord3:
                                     numPts += 1
-                                    csvFile.write("{0:.3f}".format(coord1) \
-                                                  + "," + "{0:.3f}".format(coord2) \
-                                                  + "," + "{0:.3f}".format(coord3) \
-                                                  + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
-                                                  + "," + "{0:.6f}".format(timestamps[i]) + "\n")
+                                    coords.append([coord1,coord2,coord3,int.from_bytes(intensities[i], byteorder='little')])
+                                    if self.save_to_csv:
+                                        csvFile.write("{0:.3f}".format(coord1) \
+                                                    + "," + "{0:.3f}".format(coord2) \
+                                                    + "," + "{0:.3f}".format(coord3) \
+                                                    + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
+                                                    + "," + "{0:.6f}".format(timestamps[i]) + "\n")
                                 else:
                                     nullPts += 1
-                                
+                            self.scene = np.array(coords)
+                            print("Scene shape: " + str(self.scene.shape))
                         #Spherical
                         elif self.dataType == 1:
                             csvFile.write("//Distance,Zenith,Azimuth,Inten-sity,Time\n")
@@ -512,11 +520,13 @@ class _dataCaptureThread(object):
                                 coord3 = round(float(struct.unpack('<H',coord3s[i])[0])/100.0,2)
                                 if coord1:
                                     numPts += 1
-                                    csvFile.write("{0:.3f}".format(coord1) \
-                                                  + "," + "{0:.2f}".format(coord2) \
-                                                  + "," + "{0:.2f}".format(coord3) \
-                                                  + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
-                                                  + "," + "{0:.6f}".format(timestamps[i]) + "\n")
+                                    coords.append([coord1,coord2,coord3,int.from_bytes(intensities[i], byteorder='little')])
+                                    if self.save_to_csv:
+                                        csvFile.write("{0:.3f}".format(coord1) \
+                                                    + "," + "{0:.2f}".format(coord2) \
+                                                    + "," + "{0:.2f}".format(coord3) \
+                                                    + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
+                                                    + "," + "{0:.6f}".format(timestamps[i]) + "\n")
                                 else:
                                     nullPts += 1
                             
@@ -525,19 +535,20 @@ class _dataCaptureThread(object):
                         
                         #Cartesian
                         if self.dataType == 0:
-                            csvFile.write("//X,Y,Z,Inten-sity,Time,ReturnNum\n")
+                            #csvFile.write("//X,Y,Z,Inten-sity,Time,ReturnNum\n")
                             for i in range(0,lenData):
                                 coord1 = round(float(struct.unpack('<i',coord1s[i])[0])/1000.0,3)
                                 coord2 = round(float(struct.unpack('<i',coord2s[i])[0])/1000.0,3)
                                 coord3 = round(float(struct.unpack('<i',coord3s[i])[0])/1000.0,3)
                                 if coord1 or coord2 or coord3:
                                     numPts += 1
-                                    csvFile.write("{0:.3f}".format(coord1) \
-                                                  + "," + "{0:.3f}".format(coord2) \
-                                                  + "," + "{0:.3f}".format(coord3) \
-                                                  + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
-                                                  + "," + "{0:.6f}".format(timestamps[i]) \
-                                                  + "," + str(returnNums[i]) + "\n")
+                                    coords.append([coord1,coord2,coord3,int.from_bytes(intensities[i], byteorder='little')])
+                                    if self.save_to_csv:
+                                        csvFile.write("{0:.3f}".format(coord1) \
+                                                    + "," + "{0:.3f}".format(coord2) \
+                                                    + "," + "{0:.3f}".format(coord3) \
+                                                    + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
+                                                    + "," + "{0:.6f}".format(timestamps[i]) + "\n")
                                 else:
                                     nullPts += 1
                                 
@@ -550,12 +561,13 @@ class _dataCaptureThread(object):
                                 coord3 = round(float(struct.unpack('<H',coord3s[i])[0])/100.0,2)
                                 if coord1:
                                     numPts += 1
-                                    csvFile.write("{0:.3f}".format(coord1) \
-                                                  + "," + "{0:.2f}".format(coord2) \
-                                                  + "," + "{0:.2f}".format(coord3) \
-                                                  + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
-                                                  + "," + "{0:.6f}".format(timestamps[i]) \
-                                                  + "," + str(returnNums[i]) + "\n")
+                                    coords.append([coord1,coord2,coord3,int.from_bytes(intensities[i], byteorder='little')])
+                                    if self.save_to_csv:
+                                        csvFile.write("{0:.3f}".format(coord1) \
+                                                    + "," + "{0:.2f}".format(coord2) \
+                                                    + "," + "{0:.2f}".format(coord3) \
+                                                    + "," + str(int.from_bytes(intensities[i], byteorder='little')) \
+                                                    + "," + "{0:.6f}".format(timestamps[i]) + "\n")
                                 else:
                                     nullPts += 1
     
@@ -563,9 +575,10 @@ class _dataCaptureThread(object):
                     self.nullPts = nullPts
                     
                     if self.showMessages: 
-                        print("   " + self.sensorIP + " --> closed CSV file: " + self.filePathAndName)
+                        print("   " + self.sensorIP + " --> closed CSV file: " + self.filePathAndName) if self.save_to_csv else print("   No CSV file saved.")
                         print("                    (points: " + str(numPts) + " good, " + str(nullPts) + " null, " + str(numPts + nullPts) + " total)")
-                    csvFile.close()
+                    if self.save_to_csv:
+                        csvFile.close()
                 
                 else:
                     if self.showMessages: print("   " + self.sensorIP + " --> WARNING: no point cloud data was captured")
@@ -1232,7 +1245,7 @@ class openpylivox(object):
                             self._captureStream.stop()
                             self._captureStream = None
                         self._isWriting = False
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                 else:
                     if self.showMessages: print("   " + self._sensorIP + " --> incorrect lidar spin down response")
         else:
@@ -1261,19 +1274,19 @@ class openpylivox(object):
                             self._captureStream.stop()
                             self._captureStream = None
                         self._isWriting = False
-                        time.sleep(0.1)
+                        time.sleep(0.12)
                 else:
                     if self.showMessages: print("   " + self._sensorIP + " --> incorrect lidar stand-by response")
         else:
             if self.showMessages: print("Not connected to Mid-40 sensor at IP: " + self._sensorIP)
             
             
-    def dataStart(self):
+    def dataStart(self,save_to_csv=False,interval=0.1):
         
         if self._isConnected:
             if not self._isData:
-                self._captureStream = _dataCaptureThread(self._sensorIP, self._dataSocket, "", 0, 0, 0, self.showMessages)
-                time.sleep(0.12)
+                self._captureStream = _dataCaptureThread(self._sensorIP, self._dataSocket, "", 0, interval, 0, self.showMessages, save_to_csv)
+                time.sleep(0.12) # time.sleep(0.12)
                 self._waitForIdle()
                 self._cmdSocket.sendto(self._CMD_DATA_START,(self._sensorIP, 65000))
                 if self.showMessages: print("   " + self._sensorIP + " <-- sent start data stream request")
@@ -1302,7 +1315,7 @@ class openpylivox(object):
             
     
     def dataStop(self):
-        
+        temp_numpy = None
         if self._isConnected:
             if self._isData:
                 self._waitForIdle()
@@ -1321,7 +1334,10 @@ class openpylivox(object):
                         else:
                             self._isData = False
                             if self._captureStream is not None:
+                                
                                 self._captureStream.stop()
+                                temp_numpy = self._captureStream.scene
+
                                 self._captureStream = None
                             self._isWriting = False
                             time.sleep(0.1)
@@ -1331,7 +1347,7 @@ class openpylivox(object):
                 if self.showMessages: print("   " + self._sensorIP + " --> data stream already stopped")
         else:
             if self.showMessages: print("Not connected to Mid-40 sensor at IP: " + self._sensorIP)
-            
+        return temp_numpy    
     
     def setDynamicIP(self):
         
@@ -1647,6 +1663,98 @@ class openpylivox(object):
                     if self.showMessages: print("   " + self._sensorIP + " --> unknown firmware version")
             else:
                 if self.showMessages: print("   " + self._sensorIP + " --> WARNING: data stream not started, no CSV file created")
+    
+    def saveDataToNumpy(self, filePathAndName, secsToWait=0, duration=0.5):
+        
+        if self._isConnected:
+            if self._isData:
+                if self._firmware != "UNKNOWN":
+                    try:
+                        firmwareType = self._SPECIAL_FIRMWARE_TYPE_DICT[self._firmware]
+                    except:
+                        firmwareType = 1
+    
+                    if duration < 0:
+                        if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, negative duration")
+                    else:
+                        #max duration = 4 years - 1 sec
+                        if duration >= 126230400:
+                            if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, duration too big")
+                        else:
+                        
+                            if secsToWait < 0:
+                                if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, negative time to wait")
+                            else:
+                                #max time to wait = 15 mins
+                                if secsToWait > 900:
+                                    if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, time to wait too big")
+                                else:
+                                
+                                    if filePathAndName == "":
+                                        if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, file path and name missing")
+                                    else:
+                                        
+                                        if filePathAndName[-4:].upper() != ".CSV":
+                                            filePathAndName += ".csv"
+                                            
+                                        self._isWriting = True
+                                        self._captureStream.filePathAndName = filePathAndName
+                                        self._captureStream.secsToWait = secsToWait
+                                        self._captureStream.duration = duration
+                                        self._captureStream.firmwareType = firmwareType
+                                        self._captureStream.showMessages = self.showMessages
+                                        time.sleep(0.1)
+                                        self._captureStream.isCapturing = True
+                else:
+                    if self.showMessages: print("   " + self._sensorIP + " --> unknown firmware version")
+            else:
+                if self.showMessages: print("   " + self._sensorIP + " --> WARNING: data stream not started, no CSV file created")
+    def lidarData(self, filePathAndName=None, secsToWait=0, duration=0.5):
+        if self._isConnected:
+            if self._isData:
+                if self._firmware != "UNKNOWN":
+                    try:
+                        firmwareType = self._SPECIAL_FIRMWARE_TYPE_DICT[self._firmware]
+                    except:
+                        firmwareType = 1
+    
+                    if duration < 0:
+                        if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, negative duration")
+                    else:
+                        #max duration = 4 years - 1 sec
+                        if duration >= 126230400:
+                            if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, duration too big")
+                        else:
+                        
+                            if secsToWait < 0:
+                                if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, negative time to wait")
+                            else:
+                                #max time to wait = 15 mins
+                                if secsToWait > 900:
+                                    if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, time to wait too big")
+                                else:
+                                
+                                    if filePathAndName == "":
+                                        if self.showMessages: print("   " + self._sensorIP + " --> * ISSUE: saving data, file path and name missing")
+                                    else:
+                                        
+                                        if filePathAndName[-4:].upper() != ".CSV":
+                                            filePathAndName += ".csv"
+                                            
+                                        self._isWriting = True
+                                        self._captureStream.filePathAndName = filePathAndName
+                                        self._captureStream.secsToWait = secsToWait
+                                        self._captureStream.duration = duration
+                                        self._captureStream.firmwareType = firmwareType
+                                        self._captureStream.showMessages = self.showMessages
+                                        time.sleep(0.1)
+                                        self._captureStream.isCapturing = True
+                else:
+                    if self.showMessages: print("   " + self._sensorIP + " --> unknown firmware version")
+            else:
+                if self.showMessages: print("   " + self._sensorIP + " --> WARNING: data stream not started, no CSV file created")
+
+    
             
         
     def closeCSV(self):
@@ -1788,7 +1896,7 @@ class openpylivox(object):
     
     def doneCapturing(self):
         #small sleep to ensure this command isn't continuously called if in a while True loop
-        time.sleep(0.01)
+        time.sleep(0.1)
         if self._captureStream is not None:
             if self._captureStream.duration != 126230400:
                 return not(self._captureStream.started)
@@ -1806,7 +1914,7 @@ def allDoneCapturing(sensors):
                 stop.append(sensors[i].doneCapturing())
     
     #small sleep to ensure this command isn't continuously called if in a while True loop
-    time.sleep(0.01)
+    time.sleep(0.1)
     return all(stop)
     
     
